@@ -30,22 +30,24 @@ class NN(nn.Module):
     def __init__(self, input_size, hidden_dim):
         super(NN,self).__init__()
         self.bn = nn.BatchNorm1d(input_size)
-        self.fc1 = nn.Linear(1, hidden_dim)
-        self.fc2 = nn.Linear(input_size*hidden_dim, 1)
+        self.fc1 = nn.Linear(2, hidden_dim)
+        self.fc2 = nn.Linear(input_size//2*hidden_dim, 1)
 
 
     def forward(self, x):
-        BATCH_SIZE = x.shape[0]
+        N = x.shape[0]
         x = self.bn(x)
-        #curr x shape：(BATCH_SIZE, 200)
-        x = x.view(-1, 1) #create each feature to its own example (BATCH_SIZE*200, 1)
-        x = F.relu(self.fc1(x)).reshape(BATCH_SIZE, -1) #(BATCH_SIZE, input_size*hidden_dim)
+
+        orig_features = x[:, :200].unsqueeze(2) # （N, 200, 1）
+        new_features = x[:, 200:].unsqueeze(2) # (N, 200, 1)
+        x = torch.cat([orig_features, new_features], dim=2) # (N, 200, 2)
+        x = F.relu(self.fc1(x)).reshape(N, -1) #(N, input_size*hidden_dim)
 
         return torch.sigmoid(self.fc2(x)).view(-1)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-model = NN(input_size=200, hidden_dim=16).to(DEVICE)
-optimizer = optim.Adam(model.parameters(), lr=3e-4, weight_decay=1e-4)
+model = NN(input_size=400, hidden_dim=100).to(DEVICE)
+optimizer = optim.Adam(model.parameters(), lr=2e-4, weight_decay=1e-4)
 loss_fn = nn.BCELoss()
 train_ds, val_ds, test_ds, test_ids = get_data()
 train_loader = DataLoader(train_ds, batch_size=1024, shuffle=True)
@@ -55,7 +57,7 @@ test_loader = DataLoader(test_ds, batch_size=1024)
 x, y = next(iter(train_loader))
 print(x.shape)
 
-for epoch in range(15):
+for epoch in range(20):
     propabilities, true = get_predictions(val_loader, model, device=DEVICE)
     print(f"VALIDATION ROC: {metrics.roc_auc_score(true, propabilities)}")
     for batch_idx, (data, targets) in enumerate(train_loader):
@@ -74,3 +76,5 @@ for epoch in range(15):
         optimizer.step()
 
 
+from utils import get_submission
+get_submission(model, test_loader, test_ids, DEVICE)
